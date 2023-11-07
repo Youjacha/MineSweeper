@@ -1,13 +1,21 @@
-ï»¿#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
 #include <Windows.h>
+#include <conio.h>
 
-// ì´ˆê¸‰ => 8 / 8, ì¤‘ê¸‰ => 18 * 14, ê³ ê¸‰ => 24 * 20
-// ì´ˆê¸‰ => 10ê°œ / ì¤‘ê¸‰ => 40ê°œ / ê³ ê¸‰ => 99ê°œ
+#define MINE -1
+
+#define FLAG 70
+#define ENTER 13
+#define isArrowKeys -32
+#define UP 72
+#define DOWN 80
+#define RIGHT 77
+#define LEFT 75
 
 typedef struct minefield {
     int col;
@@ -15,31 +23,38 @@ typedef struct minefield {
     int frequency;
 } minefield;
 
-struct minefield MINEFIELD[4] = {
-    {8, 8, 10}, {18, 14, 40}, {24, 20, 99}, {8, 8, 10} };
+minefield MINEFIELD[4] = { //minefieldÇü ¹è¿­ 
+    {8, 8, 10}, {14, 14, 35}, {20, 20, 80}, {8, 8, 10} };
 
-int diff = 1;
-bool is_game = false;
+int diff = 1; //±âº» ³­ÀÌµµ
+bool is_game = false; 
 
-int b_arr[24][20];
-char f_arr[24][20];
+int hiddenBoard[24][20]; 
+char gameBoard[24][20]; 
 
-int set_mine(struct minefield m);
-int check_mine(struct minefield m);
-int print_scr(struct minefield m);
-int custom_field(struct minefield* m);
-int game_option();
-int game_play();
-int set_diff(int* diff);
-int tile_open();
-int game_end(struct minefield m);
-void clear_scr(int time);
+int chosenXPos = 0;
+int chosenYPos = 0; 
+
+void set_mine(struct minefield m); //Áö·Ú ¹èÄ¡
+void check_mine(struct minefield m); //ÁÖº¯ Áö·Ú À§Ä¡ È®ÀÎ
+void print_scr(struct minefield m); //È­¸é ¾÷µ¥ÀÌÆ®
+void custom_field(struct minefield* m); //³­ÀÌµµ Ä¿½ºÅÒ
+int change_game_option(); //¿É¼Ç º¯°æ
+void game_play(); //°ÔÀÓ ½ÃÀÛ
+void set_diff(int* diff); //³­ÀÌµµ º¯°æ
+void get_key_move(minefield m); //Å° ¿òÁ÷ÀÓ °¨Áö
+void raise_flag();
+void open_tile();
+void game_end(struct minefield m); //°ÔÀÓ ³¡
+void printby_color(int color, char text); //12 - »¡°­, 15 - ÇÏ¾ç
+void clear_scr(int time); //È­¸é ÃÊ±âÈ­ 
+void init(minefield m);
 
 int main() {
-    srand((unsigned)time(NULL));
+    srand((unsigned)time(NULL)); 
     int game;
     while (1) {
-        game = game_option();
+        game = change_game_option();
         switch (game) {
         case 1:
             game_play();
@@ -50,92 +65,180 @@ int main() {
         case 3:
             custom_field(&MINEFIELD[3]);
             continue;
-        case 4: 
+        case 4:
             exit(1);
         }
     }
 }
 
-int set_mine(struct minefield m) {
-    for (int i = 0; i < m.col; i++) {
+void game_play() {
+    init(MINEFIELD[diff]);
+    print_scr(MINEFIELD[diff]);
+    set_mine(MINEFIELD[diff]);
+    check_mine(MINEFIELD[diff]);
+    get_key_move(MINEFIELD[diff]);
+}
+
+void init(minefield m) {
+    is_game = true;
+    chosenXPos = 0;
+    chosenYPos = 0;
+
+    for (int i = 0; i < m.col; i++) { //º¸µå ÃÊ±âÈ­
         for (int j = 0; j < m.row; j++) {
-            b_arr[i][j] = 0;
-            f_arr[i][j] = "?";
+            hiddenBoard[i][j] = 0;
+            gameBoard[i][j] = 63;
         }
     }
+}
 
+void set_mine(struct minefield m) {
     int x, y;
 
-    for (int i = 0; i < m.frequency; i++) {
+    for (int i = 0; i < m.frequency; i++) { //Áö·Ú ·£´ı ¹èÄ¡
         x = rand() % m.col;
         y = rand() % m.row;
-
-        if (b_arr[x][y] == 0) {
-            b_arr[x][y] = -1;
-        }
-        else
+        if (x == a && y == b) {
             i--;
+            continue;
+        }
+        if (hiddenBoard[x][y] == 0) { //ÇØ´ç Ä­¿¡ Áö·Ú°¡ ¾øÀ¸¸é
+            hiddenBoard[x][y] = MINE; //Áö·Ú ¹èÄ¡
+        } 
+        else //ÀÌ¹Ì Áö·Ú°¡ ÀÖÀ¸¸é
+            i--; //ÇÑ ¹ø ´Ù½Ã À§Ä¡ ¼±Á¤
     }
-
-    return 0;
 }
 
-// [i - 1][j - 1], [i - 1][j], [i - 1][j + 1], [i][ j - 1], [i][j + 1], [i +1][j - 1], [i + 1][j], [i + 1][j + 1]
-
-int check_mine(struct minefield m) {
-    int mine_num = 0;
+//[i - 1][j - 1] [i][j - 1] [i + 1][j - 1]
+//[i - 1][j]         [i][j]    [i + 1][j]
+//[i - 1][j + 1] [i][j + 1] [i + 1][j + 1]
+void check_mine(struct minefield m) {
+    int mine_count = 0;
     for (int i = 0; i < m.col; i++) {
         for (int j = 0; j < m.row; j++) {
-            mine_num = 0;
+            mine_count = 0;
 
-            if (b_arr[i][j] == -1) continue;
+            if (hiddenBoard[i][j] == MINE) continue;
+            if (i != 0 && j != 0 && hiddenBoard[i - 1][j - 1] == MINE) mine_count++;
+            if (j != 0 && hiddenBoard[i][j - 1] == MINE) mine_count++;
+            if (i != m.col - 1 && j != 0 && hiddenBoard[i + 1][j - 1] == MINE) mine_count++;
+            if (i != 0 && hiddenBoard[i - 1][j] == MINE) mine_count++;
+            if (i != m.col - 1 && hiddenBoard[i + 1][j] == MINE) mine_count++;
+            if (i != 0 && j != m.row - 1 && hiddenBoard[i - 1][j + 1] == MINE) mine_count++;
+            if (j != m.row - 1 && hiddenBoard[i][j + 1] == MINE) mine_count++;
+            if (i != m.col - 1 && j != m.row - 1 && hiddenBoard[i + 1][j + 1] == MINE) mine_count++;
 
-            if ((i - 1 > 0) && (j - 1 > 0) && b_arr[i - 1][j - 1] == -1)
-                mine_num++;
-            if ((i - 1 > 0) && b_arr[i - 1][j] == -1)
-                mine_num++;
-            if ((i - 1 > 0) && (j + 1 < m.row) && b_arr[i - 1][j - 1] == -1)
-                mine_num++;
-            if ((j - 1 > 0) && b_arr[i][j - 1] == -1)
-                mine_num++;
-            if ((j + 1 > m.row) && b_arr[i][j + 1] == -1)
-                mine_num++;
-            if ((i + 1 < m.col) && b_arr[i + 1][j - 1] == -1)
-                mine_num++;
-            if ((i + 1 < m.col) && b_arr[i + 1][j] == -1)
-                mine_num++;
-            if ((i + 1 < m.col) && (j + 1 < m.row) && b_arr[i + 1][j + 1] == -1) {
-                mine_num++;
-            }
-            b_arr[i][j] = mine_num;
+            hiddenBoard[i][j] = mine_count;
         }
     }
-
-    return 0;
 }
 
-int print_scr(struct minefield m) {
+void print_scr(struct minefield m) { //È­¸é Ç¥±â
     clear_scr(0);
     for (int i = 0; i < m.col; i++) {
         for (int j = 0; j < m.row; j++) {
-            printf("%c  ", f_arr[i][j]);
+            if (i == chosenXPos && j == chosenYPos) {
+                printby_color(12, gameBoard[i][j]);
+            }
+            else {
+                printf("%c  ", gameBoard[i][j]);
+            }
         }
         printf("\n");
     }
-    return 0;
 }
 
-int custom_field(struct minefield* m) {
+void get_key_move(minefield m) {
+    while (is_game) {
+        char key;
+        if (_kbhit) {
+            key = _getch();
+            if (key > 0) {
+                switch (key) {
+                case ENTER: 
+                    open_tile();
+                    break;
+                case FLAG: 
+                    raise_flag();
+                    break;
+                default:
+                    break;
+                }
+            }
+            else {
+                key = _getch();
+                switch (key) {
+                case UP:
+                    chosenXPos == 0 ? chosenXPos : chosenXPos--;
+                    print_scr(MINEFIELD[diff]);
+                    break;
+                case DOWN:
+                    chosenXPos == m.row ? chosenXPos : chosenXPos++;
+                    print_scr(MINEFIELD[diff]);
+                    break;
+                case RIGHT:
+                    chosenYPos == m.col ? chosenYPos : chosenYPos++;
+                    print_scr(MINEFIELD[diff]);
+                    break;
+                case LEFT:
+                    chosenYPos == 0 ? chosenXPos : chosenYPos--;
+                    print_scr(MINEFIELD[diff]);
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void raise_flag() {
+    int tile = hiddenBoard[chosenXPos][chosenYPos];
+    if (gameBoard != 70) {
+        gameBoard[chosenXPos][chosenYPos] = FLAG;
+    } else {
+        gameBoard[chosenXPos][chosenYPos] = tile + 48;
+    }
+}
+
+void open_tile() {
+    int tile = hiddenBoard[chosenXPos][chosenYPos];
+    if (tile < 0) {
+        game_end(MINEFIELD[diff]);
+    }
+    else {
+        gameBoard[chosenXPos][chosenYPos] = tile + 48;
+        print_scr(MINEFIELD[diff]);
+    }
+}
+
+void game_end(struct minefield m) {
+    clear_scr(0);
+    is_game = false;
+    printf("Áö·Ú¸¦ ¹â¾Ò½À´Ï´Ù..!\nÁ¤´äÀ» °ø°³ÇÕ´Ï´Ù. 'X'°¡ Áö·ÚÀÇ À§Ä¡ÀÔ´Ï´Ù\n");
+    for (int i = 0; i < m.col; i++) {
+        for (int j = 0; j < m.row; j++) {
+            hiddenBoard[i][j] != MINE ? printf("%d  ", hiddenBoard[i][j]) : printby_color(12, 'X');
+        }
+        printf("\n");
+    }
+    printf("\n10ÃÊ ÈÄ ¸ŞÀÎ È­¸éÀ¸·Î µ¹¾Æ°©´Ï´Ù");
+
+    clear_scr(10000);
+}
+
+void custom_field(struct minefield* m) {
     int x, y, frequency;
-    printf("ì§€ë¢°íŒì˜ Xê°’ì„ ì…ë ¥í•˜ì„¸ìš” ( ìµœëŒ€ 24 ì¹¸ )\n");
+    printf("Áö·ÚÆÇÀÇ X°ªÀ» ÀÔ·ÂÇÏ¼¼¿ä ( ÃÖ´ë 24 Ä­ )\n");
     scanf("%d", &x);
-    printf("ì§€ë¢°íŒì˜ Yê°’ì„ ì…ë ¥í•˜ì„¸ìš” ( ìµœëŒ€ 20 ì¹¸ )\n");
+    printf("Áö·ÚÆÇÀÇ Y°ªÀ» ÀÔ·ÂÇÏ¼¼¿ä ( ÃÖ´ë 20 Ä­ )\n");
     scanf("%d", &y);
-    printf("ì§€ë¢°ì˜ ê°œìˆ˜ë¥¼ ì…ë ¥í•˜ì„¸ìš” ( ìµœëŒ€ %dê°œ )\n", x * y / 4);
+    printf("Áö·ÚÀÇ °³¼ö¸¦ ÀÔ·ÂÇÏ¼¼¿ä ( ÃÖ´ë %d°³ )\n", x * y / 4);
     scanf("%d", &frequency);
 
     if (x > 24 || y > 20 || frequency > x * y / 4) {
-        printf("ì…ë ¥ê°’ì´ ì˜ëª»ë˜ì—ˆìŠµë‹ˆë‹¤");
+        printf("ÀÔ·Â°ªÀÌ Àß¸øµÇ¾ú½À´Ï´Ù");
         clear_scr(1000);
         return 0;
     }
@@ -144,74 +247,34 @@ int custom_field(struct minefield* m) {
     m->row = y;
     m->frequency = frequency;
 
-    printf("ê°€ë¡œ %dì¹¸\nì„¸ë¡œ %dì¹¸\nì§€ë¢° %dì¹¸", m->col, m->row, m->frequency);
+    printf("°¡·Î %dÄ­\n¼¼·Î %dÄ­\nÁö·Ú %dÄ­", m->col, m->row, m->frequency);
 
     clear_scr(1000);
-    return 0;
 }
 
-int game_option() {
+int change_game_option() {
     int a;
-    printf("ê²Œì„ì„ ì‹œì‘í•˜ë ¤ë©´ 1ì„, ë‚œì´ë„ë¥¼ ë°”ê¾¸ë ¤ë©´ 2ë¥¼, ë‚œì´ë„ ì»¤ìŠ¤í…€ì„ í•˜ë ¤ë©´ 3ì„, ê²Œì„ì„ ì¢…ë£Œí•˜ë ¤ë©´ 4ë¥¼ ì…ë ¥í•´ì£¼ì„¸ìš”\n");
+    printf("°ÔÀÓÀ» ½ÃÀÛÇÏ·Á¸é 1À», ³­ÀÌµµ¸¦ ¹Ù²Ù·Á¸é 2¸¦, ³­ÀÌµµ Ä¿½ºÅÒÀ» ÇÏ·Á¸é 3À», °ÔÀÓÀ» Á¾·áÇÏ·Á¸é 4¸¦ ÀÔ·ÂÇØÁÖ¼¼¿ä\n");
     scanf("%d", &a);
 
     return a;
 }
 
-int game_play() {
-    is_game = true;
-
-    set_mine(MINEFIELD[diff]);
-    check_mine(MINEFIELD[diff]);
-    print_scr(MINEFIELD[diff]);
-
-    while (is_game) {
-        tile_open();
-    }
-}
-
-int tile_open() {
-    int a, b;
-    printf("ì—´ ìë¦¬ì˜ ì¢Œí‘œê°’ì„ ì…ë ¥í•˜ì„¸ìš”\n");
-    scanf("%d %d", &a, &b);
-    int c = b_arr[a - 1][b - 1];
-    if (c < 0) {
-        game_end(MINEFIELD[diff]);
-        return -1;
-    } else {
-        f_arr[a - 1][b - 1] = c + 48;
-        print_scr(MINEFIELD[diff]);
-        return 1;
-    }
-}
-
-int game_end(struct minefield m) {
-    clear_scr(0);
-    is_game = false;
-    printf("ì§€ë¢°ë¥¼ ë°Ÿì•˜ìŠµë‹ˆë‹¤..!\nì •ë‹µì„ ê³µê°œí•©ë‹ˆë‹¤. -1ì´ ì§€ë¢°ì˜ ìœ„ì¹˜ì…ë‹ˆë‹¤\n");
-    for (int i = 0; i < m.col; i++) {
-        for (int j = 0; j < m.row; j++) {
-            printf("%d ", b_arr[i][j]);
-        }
-        printf("\n");
-    }
-    printf("\n10ì´ˆ í›„ ë©”ì¸ í™”ë©´ìœ¼ë¡œ ëŒì•„ê°‘ë‹ˆë‹¤");
-
-    clear_scr(10000);
-    return 0;
-}
-
-int set_diff(int* diff) {
+void set_diff(int* diff) {
     int temp;
-    printf("ë‚œì´ë„ë¥¼ ì„ íƒí•˜ì„¸ìš”\nì‰¬ì›€: 1\nì¤‘ê°„: 2\nì–´ë ¤ì›€: 3\nì»¤ìŠ¤í…€: 4\n");
+    printf("³­ÀÌµµ¸¦ ¼±ÅÃÇÏ¼¼¿ä\n½¬¿ò: 1\nÁß°£: 2\n¾î·Á¿ò: 3\nÄ¿½ºÅÒ: 4\n");
     scanf("%d", &temp);
 
-    printf("í˜„ì¬ ë‚œì´ë„: %d\n", temp);
+    printf("ÇöÀç ³­ÀÌµµ: %d\n", temp);
     *diff = temp - 1;
-    
-    clear_scr(1000);
 
-    return 0;
+    clear_scr(1000);
+}
+
+void printby_color(int color, char text) {
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
+    printf("%c  ", text);
+    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 15);
 }
 
 void clear_scr(int time) {
